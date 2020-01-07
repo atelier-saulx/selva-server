@@ -7,6 +7,7 @@
     "test": "ava",
     "watch": "ava --watch --verbose test/index.ts"
   },
+  "main": "./dist",
   "husky": {
     "hooks": {
       "/pre-commit": "lint-staged",
