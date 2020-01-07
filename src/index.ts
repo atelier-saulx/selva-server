@@ -87,23 +87,23 @@ exports.start = async ({
     fs.mkdirSync(tmpPath)
   }
 
-  if (persistent === true) {
-    if (!service) {
-      console.warn('Need service argument for persistent')
-      persistent = false
-    } else if (!localPersistentFallback && env === 'local') {
-      args.push('--dir', tmpPath)
-      args.push('--save', 10, 1)
-    } else {
-      // const { args: persistArgs } = await persist(service, tmpPath)
-      // args.push(...persistArgs)
-    }
-  }
+  // if (persistent === true) {
+  //   if (!service) {
+  //     console.warn('Need service argument for persistent')
+  //     persistent = false
+  //   } else if (!localPersistentFallback && env === 'local') {
+  //     args.push('--dir', tmpPath)
+  //     args.push('--save', 10, 1)
+  //   } else {
+  //     // const { args: persistArgs } = await persist(service, tmpPath)
+  //     // args.push(...persistArgs)
+  //   }
+  // }
 
-  if (persistent !== true) {
-    args.push('--dir', tmpPath)
-    args.push('--save', '')
-  }
+  // if (persistent !== true) {
+  //   args.push('--dir', tmpPath)
+  //   args.push('--save', '')
+  // }
 
   try {
     const dir = args[args.indexOf('--dir') + 1]
