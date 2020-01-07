@@ -1,6 +1,7 @@
-const { spawn, execSync } = require('child_process')
-const fs = require('fs')
-const path = require('path')
+import { spawn, execSync } from 'child_process'
+import fs from 'fs'
+import path from 'path'
+
 // const persist = require('./persistent')
 // const cleanExit = require('./cleanExit')
 
@@ -14,10 +15,10 @@ type FnStart = {
   service?: Service | Promise<Service>
   replica?: Service | Promise<Service>
   modules?: string[]
-  verbose: boolean
+  verbose?: boolean
 }
 
-exports.start = async function({
+export const start = async function({
   port,
   service,
   modules,
@@ -60,7 +61,7 @@ exports.start = async function({
     }
   }
 
-  const args = ['--port', port, '--protected-mode', 'no']
+  const args = ['--port', String(port), '--protected-mode', 'no']
   if (modules) {
     modules.forEach(m => {
       const platform = process.platform + '_' + process.arch
@@ -75,7 +76,7 @@ exports.start = async function({
   }
 
   if (replica) {
-    args.push('--replicaof', replica.host, replica.port)
+    args.push('--replicaof', replica.host, String(replica.port))
   }
 
   const tmpPath = path.join(process.cwd(), './tmp')
@@ -89,7 +90,7 @@ exports.start = async function({
     execSync(`redis-cli -p ${port} shutdown`, { stdio: 'inherit' })
   } catch (e) {}
 
-  console.error(args)
+  console.info(args)
 
   const redisDb = spawn('redis-server', args)
 

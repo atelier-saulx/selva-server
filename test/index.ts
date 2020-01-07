@@ -1,7 +1,21 @@
 import test from 'ava'
-// expose types here (default), maybe expose things like id etc
-import { connect } from '../src/index'
+import { start } from '../src/index'
+import redis from 'redis'
 
-test('create a server', async t => {
-  // make that server
+test.cb('create a server', t => {
+  start({ port: 6061 }).then(() => {
+    setTimeout(() => {
+      const sub = redis.createClient({ port: 6061 })
+      const pub = redis.createClient({ port: 6061 })
+
+      sub.subscribe('flap')
+
+      sub.on('message', (channel, message) => {
+        t.is(message, 'smurk')
+        t.end()
+      })
+
+      pub.publish('flap', 'smurk')
+    }, 100)
+  })
 })
