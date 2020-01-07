@@ -3,11 +3,11 @@
   "version": "0.0.2",
   "scripts": {
     "build": "tsc",
-    "start": "tsc && node dist/index.js",
+    "start": "tsc && node lib/index.js",
     "test": "ava",
     "watch": "ava --watch --verbose test/index.ts"
   },
-  "main": "./dist",
+  "main": "./lib",
   "husky": {
     "hooks": {
       "/pre-commit": "lint-staged",
