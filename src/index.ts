@@ -4,7 +4,7 @@ const path = require('path')
 // const persist = require('./persistent')
 // const cleanExit = require('./cleanExit')
 
-type Service {
+type Service = {
   port: number
   host: string
 }
@@ -17,7 +17,7 @@ type FnStart = {
   verbose: boolean
 }
 
-exports.start = function async ({
+exports.start = async function({
   port,
   service,
   modules,
@@ -64,7 +64,7 @@ exports.start = function async ({
   if (modules) {
     modules.forEach(m => {
       const platform = process.platform + '_' + process.arch
-      const p = path.join(__dirname, 'modules', platform, m + '.so')
+      const p = path.join(__dirname, '../', 'modules', platform, m + '.so')
       if (fs.existsSync(p)) {
         console.info(`Load redis module "${m}"`)
         args.push('--loadmodule', p)
@@ -76,14 +76,12 @@ exports.start = function async ({
 
   if (replica) {
     args.push('--replicaof', replica.host, replica.port)
-    
   }
 
   const tmpPath = path.join(process.cwd(), './tmp')
   if (!fs.existsSync(tmpPath)) {
     fs.mkdirSync(tmpPath)
   }
-
 
   try {
     const dir = args[args.indexOf('--dir') + 1]
