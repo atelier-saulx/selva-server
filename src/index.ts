@@ -18,14 +18,24 @@ type FnStart = {
   verbose?: boolean
 }
 
+type SelvaServer = {
+  on: (type: 'data' | 'close' | 'error', cb: (data) => void) => void
+  destroy: () => Promise<void>
+}
+
+const wait = (): Promise<void> =>
+  new Promise(resolve => {
+    setTimeout(resolve, 100)
+  })
+
 export const start = async function({
   port,
   service,
   modules,
   replica,
-  verbose = true
-}: FnStart) {
-  console.info('Start db 🌈')
+  verbose = false
+}: FnStart): Promise<SelvaServer> {
+  if (verbose) console.info('Start db 🌈')
   if (service instanceof Promise) {
     if (verbose) {
       console.info('awaiting service')
@@ -60,14 +70,15 @@ export const start = async function({
       console.info('listen on port', port)
     }
   }
-
   const args = ['--port', String(port), '--protected-mode', 'no']
   if (modules) {
     modules.forEach(m => {
       const platform = process.platform + '_' + process.arch
       const p = path.join(__dirname, '../', 'modules', platform, m + '.so')
       if (fs.existsSync(p)) {
-        console.info(`Load redis module "${m}"`)
+        if (verbose) {
+          console.info(`  Load redis module "${m}"`)
+        }
         args.push('--loadmodule', p)
       } else {
         console.warn(`${m} module does not exists for "${platform}"`)
@@ -86,30 +97,30 @@ export const start = async function({
 
   try {
     const dir = args[args.indexOf('--dir') + 1]
-    execSync(`redis-cli -p ${port} config set dir ${dir}`, { stdio: 'inherit' })
-    execSync(`redis-cli -p ${port} shutdown`, { stdio: 'inherit' })
+    execSync(`redis-cli -p ${port} config set dir ${dir}`)
+    execSync(`redis-cli -p ${port} shutdown`)
   } catch (e) {}
-
-  console.info(args)
 
   const redisDb = spawn('redis-server', args)
 
-  redisDb.stderr.on('data', data => {
-    // log(new Error(data.toString()), { channels: ['slack'] })
-  })
-
-  redisDb.stdout.on('data', data => {
-    if (verbose) {
-      // log(data.toString())
+  const redisServer: SelvaServer = {
+    on: (type: 'data' | 'close' | 'error', cb: (data: any) => void) => {
+      if (type === 'error') {
+        redisDb.stderr.on('data', cb)
+      } else if (type === 'data') {
+        redisDb.stdout.on('data', cb)
+      } else {
+        redisDb.on('close', cb)
+      }
+    },
+    destroy: async () => {
+      execSync(`redis-cli -p ${port} shutdown`)
+      redisDb.kill()
+      await wait()
     }
-  })
-
-  redisDb.on('close', code => {
-    // may need to force a restart and tell the registry this happened
-    // log(new Error(`Redis closed with ${code}`), { channels: ['slack'] })
-  })
+  }
 
   // cleanExit(port)
 
-  return redisDb
+  return redisServer
 }
