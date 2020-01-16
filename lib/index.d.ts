@@ -1,4 +1,3 @@
-/// <reference types="node" />
 declare type Service = {
     port: number;
     host: string;
@@ -10,5 +9,9 @@ declare type FnStart = {
     modules?: string[];
     verbose?: boolean;
 };
-export declare const start: ({ port, service, modules, replica, verbose }: FnStart) => Promise<import("child_process").ChildProcessWithoutNullStreams>;
+declare type SelvaServer = {
+    on: (type: 'data' | 'close' | 'error', cb: (data: any) => void) => void;
+    destroy: () => Promise<void>;
+};
+export declare const start: ({ port, service, modules, replica, verbose }: FnStart) => Promise<SelvaServer>;
 export {};
