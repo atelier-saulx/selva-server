@@ -74,7 +74,14 @@ export const start = async function({
   if (modules) {
     modules.forEach(m => {
       const platform = process.platform + '_' + process.arch
-      const p = path.join(__dirname, '../', 'modules', platform, m + '.so')
+      const p = path.join(
+        __dirname,
+        '../',
+        'modules',
+        'dist',
+        platform,
+        m + '.so'
+      )
       if (fs.existsSync(p)) {
         if (verbose) {
           console.info(`  Load redis module "${m}"`)
