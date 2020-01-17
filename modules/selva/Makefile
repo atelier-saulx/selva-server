@@ -8,7 +8,7 @@ ifndef RMUTIL_LIBDIR
 endif
 
 ifndef SRC_DIR
-	SRC_DIR=example
+	SRC_DIR=module
 endif
 
 
