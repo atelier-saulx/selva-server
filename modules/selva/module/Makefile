@@ -27,7 +27,11 @@ rmutil: FORCE
 	$(MAKE) -C $(RMUTIL_LIBDIR)
 
 module.so: module.o
+ifeq ($(uname_S),Linux)
+	$(LD) -o $@ module.o $(SHOBJ_LDFLAGS) $(LIBS) -L$(RMUTIL_LIBDIR) -lrmutil -lc  -luuid
+else
 	$(LD) -o $@ module.o $(SHOBJ_LDFLAGS) $(LIBS) -L$(RMUTIL_LIBDIR) -lrmutil -lc 
+endif
 
 clean:
 	rm -rf *.xo *.so *.o

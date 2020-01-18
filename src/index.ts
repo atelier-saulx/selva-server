@@ -78,7 +78,7 @@ export const start = async function({
         __dirname,
         '../',
         'modules',
-        'dist',
+        'binaries',
         platform,
         m + '.so'
       )
