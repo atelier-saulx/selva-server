@@ -33,7 +33,6 @@ int GenId(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
 
   if (argc == 2) {
     const char *uuid_str = RedisModule_StringPtrLen(argv[1], NULL);
-    RedisModule_Log(ctx, "notice", "EXTERNAL: %s", uuid_str);
     char hash_str[37];
     hash(hash_str, uuid_str, strlen(uuid_str));
     RedisModule_ReplyWithSimpleString(ctx, hash_str);
@@ -41,7 +40,6 @@ int GenId(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
   } else {
     char uuid_str[37];
     genUuid(uuid_str);
-    RedisModule_Log(ctx, "notice", "UUID: %s", uuid_str);
     char hash_str[37];
     hash(hash_str, uuid_str, 37);
     RedisModule_ReplyWithSimpleString(ctx, hash_str);
