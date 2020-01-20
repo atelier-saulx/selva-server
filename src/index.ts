@@ -114,27 +114,29 @@ export const start = async function({
   } catch (e) {}
 
   const redisDb = spawn('redis-server', args)
-  setTimeout(() => {
-    execSync(`redis-cli -p ${port} set ___selva_lua_loglevel ${loglevel}`)
-    if (developmentLogging) {
-      let sub: RedisClient = createClient(<number>port)
+
+  if (developmentLogging) {
+    setTimeout(() => {
+      execSync(`redis-cli -p ${port} set ___selva_lua_loglevel ${loglevel}`)
 
       const setupLogging = () => {
+        let sub: RedisClient = createClient(<number>port)
         sub.on('message', (channel, log) => {
           console.log('LUA:', log)
         })
         sub.subscribe('___selva_lua_logs')
+
+        setInterval(() => {
+          // refresh the development logging
+          // redis subscriptions tend to die over time
+          sub.end(false)
+          setupLogging()
+        }, 1000 * 60 * 5)
       }
 
-      setInterval(() => {
-        // refresh the development logging
-        // redis subscriptions tend to die over time
-        sub.end(false)
-        setupLogging()
-      }, 1000 * 60 * 5)
       setupLogging()
-    }
-  }, 100)
+    }, 100)
+  }
 
   const redisServer: SelvaServer = {
     on: (type: 'data' | 'close' | 'error', cb: (data: any) => void) => {
