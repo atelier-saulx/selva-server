@@ -1,6 +1,7 @@
 import { spawn, execSync } from 'child_process'
 import fs from 'fs'
 import path from 'path'
+import { RedisClient, createClient } from 'redis'
 
 // const persist = require('./persistent')
 // const cleanExit = require('./cleanExit')
@@ -16,10 +17,12 @@ type FnStart = {
   replica?: Service | Promise<Service>
   modules?: string[]
   verbose?: boolean
+  loglevel?: string
+  developmentLogging?: boolean
 }
 
 type SelvaServer = {
-  on: (type: 'data' | 'close' | 'error', cb: (data) => void) => void
+  on: (type: 'log' | 'data' | 'close' | 'error', cb: (data) => void) => void
   destroy: () => Promise<void>
 }
 
@@ -33,7 +36,9 @@ export const start = async function({
   service,
   modules,
   replica,
-  verbose = false
+  verbose = false,
+  loglevel = 'warning',
+  developmentLogging = false
 }: FnStart): Promise<SelvaServer> {
   if (verbose) console.info('Start db 🌈')
   if (service instanceof Promise) {
@@ -109,6 +114,27 @@ export const start = async function({
   } catch (e) {}
 
   const redisDb = spawn('redis-server', args)
+  setTimeout(() => {
+    execSync(`redis-cli -p ${port} set ___selva_lua_loglevel ${loglevel}`)
+    if (developmentLogging) {
+      let sub: RedisClient = createClient(<number>port)
+
+      const setupLogging = () => {
+        sub.on('message', (channel, log) => {
+          console.log('LUA:', log)
+        })
+        sub.subscribe('___selva_lua_logs')
+      }
+
+      setInterval(() => {
+        // refresh the development logging
+        // redis subscriptions tend to die over time
+        sub.end(false)
+        setupLogging()
+      }, 1000 * 60 * 5)
+      setupLogging()
+    }
+  }, 100)
 
   const redisServer: SelvaServer = {
     on: (type: 'data' | 'close' | 'error', cb: (data: any) => void) => {
