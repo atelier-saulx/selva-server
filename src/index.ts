@@ -1,7 +1,9 @@
+import retry from 'async-retry'
 import { spawn, execSync } from 'child_process'
 import fs from 'fs'
 import path from 'path'
 import { RedisClient, createClient } from 'redis'
+import { BackupFns, scheduleBackups } from './backups'
 
 // const persist = require('./persistent')
 // const cleanExit = require('./cleanExit')
@@ -19,6 +21,10 @@ type FnStart = {
   verbose?: boolean
   loglevel?: string
   developmentLogging?: boolean
+  backups?: {
+    scheduled: { intervalInMinutes: number }
+    backupFns: BackupFns | Promise<BackupFns>
+  }
 }
 
 type SelvaServer = {
@@ -35,14 +41,16 @@ const wait = (): Promise<void> =>
   })
 
 export const start = async function({
-  port,
+  port: portOpt,
   service,
   modules,
   replica,
   verbose = false,
   loglevel = 'warning',
-  developmentLogging = false
+  developmentLogging = false,
+  backups = null
 }: FnStart): Promise<SelvaServer> {
+  let port: number
   if (verbose) console.info('Start db 🌈')
   if (service instanceof Promise) {
     if (verbose) {
@@ -55,11 +63,13 @@ export const start = async function({
     }
   }
 
-  if (port instanceof Promise) {
+  if (portOpt instanceof Promise) {
     if (verbose) {
       console.info('awaiting port')
     }
-    port = await port
+    port = await portOpt
+  } else {
+    port = portOpt
   }
 
   if (replica instanceof Promise) {
@@ -78,6 +88,31 @@ export const start = async function({
       console.info('listen on port', port)
     }
   }
+
+  if (backups) {
+    if (backups.backupFns instanceof Promise) {
+      backups.backupFns = await backups.backupFns
+    }
+
+    if (backups.scheduled) {
+      const backUp = async (_bail: (e: Error) => void) => {
+        await scheduleBackups(
+          process.cwd(),
+          port,
+          backups.scheduled.intervalInMinutes,
+          <BackupFns>backups.backupFns
+        )
+      }
+
+      retry(backUp, { retries: 3 }).catch(e => {
+        console.error(`Backups failed ${e.stack}`)
+        execSync(`redis-cli -p ${port} shutdown`)
+        redisDb.kill()
+        process.exit(1)
+      })
+    }
+  }
+
   const args = ['--port', String(port), '--protected-mode', 'no']
   if (modules) {
     modules.forEach(m => {

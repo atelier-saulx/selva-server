@@ -101,7 +101,7 @@ export async function scheduleBackups(
       console.error(`Failed to back up ${e}`)
     }
   } else {
-    const delay = nextBackup - timeOfDay
+    const delay = Math.max(nextBackup - timeOfDay, 0)
     await new Promise((resolve, _reject) => setTimeout(resolve, delay))
     await scheduleBackups(redisDir, redisPort, intervalInMinutes, backupFns)
   }
