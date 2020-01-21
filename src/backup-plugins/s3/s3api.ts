@@ -22,6 +22,10 @@ export function createApi(
   },
   endpoint: string
 ): S3Api {
+  if (!opts.accessKeyId || !opts.secretAccessKey) {
+    throw new Error('No accessKeyId or secretAccessKey provided')
+  }
+
   aws.config.update(opts)
   const s3 = new aws.S3({ endpoint: endpoint })
   const api: S3Api = {
@@ -93,7 +97,7 @@ export function createApi(
       })
     },
     async storeFile(bucketName, destFilepath, sourceFilepath) {
-      const content = await fs.readFile(sourceFilepath, 'utf8')
+      const content = await fs.readFile(sourceFilepath)
       return new Promise((resolve, reject) => {
         s3.upload(
           { Bucket: bucketName, Key: destFilepath, Body: content },

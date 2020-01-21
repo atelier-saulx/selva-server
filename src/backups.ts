@@ -84,7 +84,7 @@ export async function scheduleBackups(
     }
   } else {
     const delay = nextBackup - timeOfDay
-    await new Promise((resolve, reject) => setTimeout(resolve, delay))
+    await new Promise((resolve, _reject) => setTimeout(resolve, delay))
     await scheduleBackups(redisDir, redisPort, intervalInMinutes, backupFn)
   }
 

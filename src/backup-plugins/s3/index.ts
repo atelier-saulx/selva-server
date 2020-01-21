@@ -1,4 +1,3 @@
-import { join as pathJoin } from 'path'
 import { SendBackup } from '../../backups'
 import { createApi, S3Api } from './s3api'
 
@@ -38,8 +37,8 @@ export default async function mkBackupFn(opts: S3Opts): Promise<SendBackup> {
   await s3.ensureBucket(bucketName, 'private')
 
   return async (rdbFilePath: string) => {
-    const dstFilepath = pathJoin('backups', new Date().toISOString())
+    const dstFilepath = new Date().toISOString()
     await s3.storeFile(bucketName, dstFilepath, rdbFilePath)
-    await cleanUpOldBackups(s3, bucketName, backupRetentionInDays)
+    // await cleanUpOldBackups(s3, bucketName, backupRetentionInDays)
   }
 }
