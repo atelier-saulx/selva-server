@@ -79,32 +79,31 @@ export async function scheduleBackups(
   backupFns: BackupFns
 ) {
   const redis = createClient({ port: redisPort })
-
   const backupInterval = intervalInMinutes * 60 * 1000
-  const nextBackup = await nextBackupTime(redis, backupInterval)
 
-  const timeOfDay = msSinceMidnight()
-  if (timeOfDay >= nextBackup) {
-    try {
-      await backupFns.sendBackup(pathJoin(redisDir, 'dump.rdb'))
-      await new Promise((resolve, reject) => {
-        redis.set(
-          '___selva_backup_timestamp',
-          String(timeOfDay),
-          (err, reply) => {
-            if (err) return reject(err)
-            resolve(reply)
-          }
-        )
-      })
-    } catch (e) {
-      console.error(`Failed to back up ${e}`)
+  while (true) {
+    const nextBackup = await nextBackupTime(redis, backupInterval)
+
+    const timeOfDay = msSinceMidnight()
+    if (timeOfDay >= nextBackup) {
+      try {
+        await backupFns.sendBackup(pathJoin(redisDir, 'dump.rdb'))
+        await new Promise((resolve, reject) => {
+          redis.set(
+            '___selva_backup_timestamp',
+            String(timeOfDay),
+            (err, reply) => {
+              if (err) return reject(err)
+              resolve(reply)
+            }
+          )
+        })
+      } catch (e) {
+        console.error(`Failed to back up ${e}`)
+      }
+    } else {
+      const delay = Math.max(nextBackup - timeOfDay, 1000 * 60) // wait at least 1 minute in between runs
+      await new Promise((resolve, _reject) => setTimeout(resolve, delay))
     }
-  } else {
-    const delay = Math.max(nextBackup - timeOfDay, 0)
-    await new Promise((resolve, _reject) => setTimeout(resolve, delay))
-    await scheduleBackups(redisDir, redisPort, intervalInMinutes, backupFns)
   }
-
-  redis.end(false)
 }

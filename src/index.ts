@@ -104,7 +104,7 @@ export const start = async function({
         )
       }
 
-      retry(backUp, { retries: 3 }).catch(e => {
+      retry(backUp, { forever: true }).catch(e => {
         console.error(`Backups failed ${e.stack}`)
         execSync(`redis-cli -p ${port} shutdown`)
         redisDb.kill()
