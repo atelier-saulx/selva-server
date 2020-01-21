@@ -48,7 +48,8 @@ export async function saveAndBackUp(
 
     await backupFn(pathJoin(redisDir, 'dump.rdb'))
   } catch (e) {
-    console.error(`Failed to back up ${e}`)
+    console.error(`Failed to back up ${e.stack}`)
+    throw e
   } finally {
     redis.end(false)
   }

@@ -13,7 +13,7 @@ const backups = require('../../lib/backups')
 mkS3({
   endpoint: ENDPOINT,
   backupRetentionInDays: 30,
-  bucketName: BUCKET,
+  bucketName: BUCKET, // TODO: pass database name etc. to automate
   config: {
     accessKeyId: ACCESS_KEY_ID,
     secretAccessKey: SECRET_ACCESS_KEY
@@ -23,6 +23,7 @@ mkS3({
     port: 6061,
     modules: ['redisearch'],
     developmentLogging: true
+    // TODO: accept backupFn as a promise, awaited in server.start()
   })
 
   setTimeout(() => {

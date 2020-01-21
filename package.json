@@ -64,6 +64,9 @@
     "typescript": "^3.7.3"
   },
   "dependencies": {
-    "aws-sdk": "^2.607.0"
+    "@types/node-fetch": "^2.5.4",
+    "aws-sdk": "^2.607.0",
+    "dropbox": "^4.0.30",
+    "node-fetch": "^2.6.0"
   }
 }
