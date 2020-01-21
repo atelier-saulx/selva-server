@@ -78,6 +78,7 @@ export async function scheduleBackups(
   intervalInMinutes: number,
   backupFns: BackupFns
 ) {
+  await new Promise((resolve, _reject) => setTimeout(resolve, 500))
   let redis: RedisClient | null = createClient({ port: redisPort })
   const backupInterval = intervalInMinutes * 60 * 1000
 

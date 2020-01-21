@@ -14,7 +14,9 @@ const backups = require('../../lib/backups')
 
 ;(async backupFns => {
   // force to load backup
-  await fs.unlink(path.join(process.cwd(), 'dump.rdb'))
+  try {
+    await fs.unlink(path.join(process.cwd(), 'dump.rdb'))
+  } catch (e) {}
 
   const server = start({
     port: 6061,
@@ -22,6 +24,7 @@ const backups = require('../../lib/backups')
     developmentLogging: true,
     backups: {
       loadBackup: true,
+      scheduled: { intervalInMinutes: 1 },
       backupFns: mkS3({
         endpoint: ENDPOINT,
         bucketName: BUCKET, // TODO: pass database name etc. to automate
@@ -35,20 +38,8 @@ const backups = require('../../lib/backups')
   })
 
   setTimeout(() => {
-    server
-      .backup()
-      .then(() => {
-        console.log(`Backed up successfully`)
-      })
-      .catch(e => {
-        console.error(`Failed to back up ${e}`)
-      })
-      .finally(() => {
-        setTimeout(() => {
-          server.destroy().catch(e => {
-            console.error(e)
-          })
-        }, 1000)
-      })
-  }, 500)
+    server.destroy().catch(e => {
+      console.error(e)
+    })
+  }, 1000 * 60 * 5)
 })().catch(e => console.error(e))
