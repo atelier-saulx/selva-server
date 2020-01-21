@@ -22,7 +22,7 @@ type FnStart = {
 }
 
 type SelvaServer = {
-  on: (type: 'log' | 'data' | 'close' | 'error', cb: (data) => void) => void
+  on: (type: 'log' | 'data' | 'close' | 'error', cb: (data: any) => void) => void
   destroy: () => Promise<void>
 }
 
@@ -121,7 +121,7 @@ export const start = async function({
 
       const setupLogging = () => {
         let sub: RedisClient = createClient(<number>port)
-        sub.on('message', (channel, log) => {
+        sub.on('message', (_channel, log) => {
           console.log('LUA:', log)
         })
         sub.subscribe('___selva_lua_logs')
