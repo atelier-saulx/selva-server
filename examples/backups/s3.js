@@ -1,3 +1,5 @@
+const fs = require('fs').promises
+const path = require('path')
 const start = require('../../lib').start
 const redis = require('redis')
 
@@ -18,7 +20,7 @@ mkS3({
     accessKeyId: ACCESS_KEY_ID,
     secretAccessKey: SECRET_ACCESS_KEY
   }
-}).then(async backupFn => {
+}).then(async backupFns => {
   const server = start({
     port: 6061,
     modules: ['redisearch'],
@@ -28,9 +30,15 @@ mkS3({
 
   setTimeout(() => {
     backups
-      .saveAndBackUp(process.cwd(), 6061, backupFn)
+      .saveAndBackUp(process.cwd(), 6061, backupFns)
       .then(() => {
         console.log(`Backed up successfully`)
+      })
+      .then(() => {
+        return fs.unlink(path.join(process.cwd(), 'dump.rdb'))
+      })
+      .then(() => {
+        return backups.loadBackup(process.cwd(), backupFns)
       })
       .catch(e => {
         console.error(`Failed to back up ${e}`)

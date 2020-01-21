@@ -1,4 +1,4 @@
-import { SendBackup } from '../../backups';
+import { BackupFns } from '../../backups';
 declare type S3Opts = {
     config: {
         accessKeyId: string;
@@ -8,5 +8,5 @@ declare type S3Opts = {
     bucketName: string;
     backupRetentionInDays: number;
 };
-export default function mkBackupFn(opts: S3Opts): Promise<SendBackup>;
+export default function mkBackupFn(opts: S3Opts): Promise<BackupFns>;
 export {};
