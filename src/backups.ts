@@ -78,10 +78,14 @@ export async function scheduleBackups(
   intervalInMinutes: number,
   backupFns: BackupFns
 ) {
-  const redis = createClient({ port: redisPort })
+  let redis: RedisClient | null = createClient({ port: redisPort })
   const backupInterval = intervalInMinutes * 60 * 1000
 
   while (true) {
+    if (!redis) {
+      redis = createClient({ port: redisPort })
+    }
+
     const nextBackup = await nextBackupTime(redis, backupInterval)
 
     const timeOfDay = msSinceMidnight()
@@ -103,6 +107,11 @@ export async function scheduleBackups(
       }
     } else {
       const delay = Math.max(nextBackup - timeOfDay, 1000 * 60) // wait at least 1 minute in between runs
+      if (delay > 5 * 60 * 1000) {
+        // if we wait more than 5 minutes, we should probably close and reopen the redis connection
+        redis.end(false)
+        redis = null
+      }
       await new Promise((resolve, _reject) => setTimeout(resolve, delay))
     }
   }
