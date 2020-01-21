@@ -22,7 +22,10 @@ type FnStart = {
 }
 
 type SelvaServer = {
-  on: (type: 'log' | 'data' | 'close' | 'error', cb: (data: any) => void) => void
+  on: (
+    type: 'log' | 'data' | 'close' | 'error',
+    cb: (data: any) => void
+  ) => void
   destroy: () => Promise<void>
 }
 
