@@ -1,3 +1,4 @@
+import { BackupFns } from './backups';
 declare type Service = {
     port: number;
     host: string;
@@ -10,10 +11,16 @@ declare type FnStart = {
     verbose?: boolean;
     loglevel?: string;
     developmentLogging?: boolean;
+    backups?: {
+        scheduled: {
+            intervalInMinutes: number;
+        };
+        backupFns: BackupFns | Promise<BackupFns>;
+    };
 };
 declare type SelvaServer = {
     on: (type: 'log' | 'data' | 'close' | 'error', cb: (data: any) => void) => void;
     destroy: () => Promise<void>;
 };
-export declare const start: ({ port, service, modules, replica, verbose, loglevel, developmentLogging }: FnStart) => Promise<SelvaServer>;
+export declare const start: ({ port: portOpt, service, modules, replica, verbose, loglevel, developmentLogging, backups }: FnStart) => Promise<SelvaServer>;
 export {};
