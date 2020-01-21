@@ -3,7 +3,7 @@ import { spawn, execSync } from 'child_process'
 import fs from 'fs'
 import path from 'path'
 import { RedisClient, createClient } from 'redis'
-import { BackupFns, scheduleBackups } from './backups'
+import { BackupFns, scheduleBackups, saveAndBackUp } from './backups'
 
 // const persist = require('./persistent')
 // const cleanExit = require('./cleanExit')
@@ -33,6 +33,7 @@ type SelvaServer = {
     cb: (data: any) => void
   ) => void
   destroy: () => Promise<void>
+  backup: () => Promise<void>
 }
 
 const wait = (): Promise<void> =>
@@ -51,6 +52,7 @@ export const start = async function({
   backups = null
 }: FnStart): Promise<SelvaServer> {
   let port: number
+  let backupFns: BackupFns
   if (verbose) console.info('Start db 🌈')
   if (service instanceof Promise) {
     if (verbose) {
@@ -91,7 +93,9 @@ export const start = async function({
 
   if (backups) {
     if (backups.backupFns instanceof Promise) {
-      backups.backupFns = await backups.backupFns
+      backupFns = await backups.backupFns
+    } else {
+      backupFns = backups.backupFns
     }
 
     if (backups.scheduled) {
@@ -100,7 +104,7 @@ export const start = async function({
           process.cwd(),
           port,
           backups.scheduled.intervalInMinutes,
-          <BackupFns>backups.backupFns
+          backupFns
         )
       }
 
@@ -190,6 +194,14 @@ export const start = async function({
       execSync(`redis-cli -p ${port} shutdown`)
       redisDb.kill()
       await wait()
+    },
+    backup: async () => {
+      // make a manual backup if available
+      if (!backupFns) {
+        throw new Error(`No backup options supplied`)
+      }
+
+      await saveAndBackUp(process.cwd(), port, backupFns)
     }
   }
 
