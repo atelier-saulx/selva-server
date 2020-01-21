@@ -12,33 +12,34 @@ const mkS3 = require('../../lib/backup-plugins/s3').default
 
 const backups = require('../../lib/backups')
 
-mkS3({
-  endpoint: ENDPOINT,
-  backupRetentionInDays: 30,
-  bucketName: BUCKET, // TODO: pass database name etc. to automate
-  config: {
-    accessKeyId: ACCESS_KEY_ID,
-    secretAccessKey: SECRET_ACCESS_KEY
-  }
-}).then(async backupFns => {
+;(async backupFns => {
+  // force to load backup
+  await fs.unlink(path.join(process.cwd(), 'dump.rdb'))
+
   const server = start({
     port: 6061,
     modules: ['redisearch'],
-    developmentLogging: true
+    developmentLogging: true,
+    backups: {
+      loadBackup: true,
+      backupFns: mkS3({
+        endpoint: ENDPOINT,
+        backupRetentionInDays: 30,
+        bucketName: BUCKET, // TODO: pass database name etc. to automate
+        config: {
+          accessKeyId: ACCESS_KEY_ID,
+          secretAccessKey: SECRET_ACCESS_KEY
+        }
+      })
+    }
     // TODO: accept backupFn as a promise, awaited in server.start()
   })
 
   setTimeout(() => {
-    backups
-      .saveAndBackUp(process.cwd(), 6061, backupFns)
+    server
+      .backup()
       .then(() => {
         console.log(`Backed up successfully`)
-      })
-      .then(() => {
-        return fs.unlink(path.join(process.cwd(), 'dump.rdb'))
-      })
-      .then(() => {
-        return backups.loadBackup(process.cwd(), backupFns)
       })
       .catch(e => {
         console.error(`Failed to back up ${e}`)
@@ -51,4 +52,4 @@ mkS3({
         }, 1000)
       })
   }, 500)
-})
+}).catch(e => console.error(e))
