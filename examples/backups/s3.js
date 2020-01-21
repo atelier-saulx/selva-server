@@ -24,7 +24,6 @@ const backups = require('../../lib/backups')
       loadBackup: true,
       backupFns: mkS3({
         endpoint: ENDPOINT,
-        backupRetentionInDays: 30,
         bucketName: BUCKET, // TODO: pass database name etc. to automate
         config: {
           accessKeyId: ACCESS_KEY_ID,

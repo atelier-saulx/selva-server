@@ -9,7 +9,7 @@ type S3Opts = {
   }
   endpoint: string
   bucketName: string
-  backupRetentionInDays: number
+  backupRetentionInDays?: number
 }
 
 async function cleanUpOldBackups(
@@ -34,7 +34,7 @@ async function cleanUpOldBackups(
 }
 
 export default async function mkBackupFn(opts: S3Opts): Promise<BackupFns> {
-  const { endpoint, backupRetentionInDays, bucketName, config } = opts
+  const { endpoint, backupRetentionInDays = 30, bucketName, config } = opts
   const s3 = createApi(config, endpoint)
   await s3.ensureBucket(bucketName, 'private')
 

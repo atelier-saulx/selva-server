@@ -6,7 +6,7 @@ declare type S3Opts = {
     };
     endpoint: string;
     bucketName: string;
-    backupRetentionInDays: number;
+    backupRetentionInDays?: number;
 };
 export default function mkBackupFn(opts: S3Opts): Promise<BackupFns>;
 export {};
