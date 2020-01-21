@@ -3,7 +3,12 @@ import { spawn, execSync } from 'child_process'
 import fs from 'fs'
 import path from 'path'
 import { RedisClient, createClient } from 'redis'
-import { BackupFns, scheduleBackups, saveAndBackUp } from './backups'
+import {
+  BackupFns,
+  scheduleBackups,
+  saveAndBackUp,
+  loadBackup
+} from './backups'
 
 // const persist = require('./persistent')
 // const cleanExit = require('./cleanExit')
@@ -22,7 +27,8 @@ type FnStart = {
   loglevel?: string
   developmentLogging?: boolean
   backups?: {
-    scheduled: { intervalInMinutes: number }
+    loadBackup?: boolean
+    scheduled?: { intervalInMinutes: number }
     backupFns: BackupFns | Promise<BackupFns>
   }
 }
@@ -96,6 +102,10 @@ export const start = async function({
       backupFns = await backups.backupFns
     } else {
       backupFns = backups.backupFns
+    }
+
+    if (backups.loadBackup) {
+      await loadBackup(process.cwd(), backupFns)
     }
 
     if (backups.scheduled) {
