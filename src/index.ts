@@ -42,6 +42,8 @@ type SelvaServer = {
   backup: () => Promise<void>
 }
 
+const defaultModules = ['redisearch', 'selva']
+
 const wait = (): Promise<void> =>
   new Promise(resolve => {
     setTimeout(resolve, 100)
@@ -50,7 +52,7 @@ const wait = (): Promise<void> =>
 export const start = async function({
   port: portOpt,
   service,
-  modules = ['redisearch', 'selva'],
+  modules,
   replica,
   verbose = false,
   loglevel = 'warning',
@@ -128,27 +130,32 @@ export const start = async function({
   }
 
   const args = ['--port', String(port), '--protected-mode', 'no']
+
   if (modules) {
-    modules.forEach(m => {
-      const platform = process.platform + '_' + process.arch
-      const p = path.join(
-        __dirname,
-        '../',
-        'modules',
-        'binaries',
-        platform,
-        m + '.so'
-      )
-      if (fs.existsSync(p)) {
-        if (verbose) {
-          console.info(`  Load redis module "${m}"`)
-        }
-        args.push('--loadmodule', p)
-      } else {
-        console.warn(`${m} module does not exists for "${platform}"`)
-      }
-    })
+    modules = [...new Set([...defaultModules, ...modules])]
+  } else {
+    modules = defaultModules
   }
+
+  modules.forEach(m => {
+    const platform = process.platform + '_' + process.arch
+    const p = path.join(
+      __dirname,
+      '../',
+      'modules',
+      'binaries',
+      platform,
+      m + '.so'
+    )
+    if (fs.existsSync(p)) {
+      if (verbose) {
+        console.info(`  Load redis module "${m}"`)
+      }
+      args.push('--loadmodule', p)
+    } else {
+      console.warn(`${m} module does not exists for "${platform}"`)
+    }
+  })
 
   if (replica) {
     args.push('--replicaof', replica.host, String(replica.port))
