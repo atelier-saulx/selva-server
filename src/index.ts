@@ -50,7 +50,7 @@ const wait = (): Promise<void> =>
 export const start = async function({
   port: portOpt,
   service,
-  modules,
+  modules = ['redisearch', 'selva'],
   replica,
   verbose = false,
   loglevel = 'warning',
