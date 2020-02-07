@@ -18,6 +18,9 @@ function makeAll(path: string, schema: Schema, opts: GetOptions): GetOptions {
 
   const typeName = schema.prefixToTypeMapping[newOpts.$id.substr(0, 2)]
   const type = schema.types[typeName]
+  if (!type) {
+    return newOpts
+  }
 
   let prop = type.fields[parts[0]]
   for (let i = 1; i < parts.length; i++) {
@@ -47,6 +50,7 @@ function addFields(
   schema: Schema,
   opts: GetOptions
 ): void {
+  let hasKeys = false
   for (const key in opts) {
     if (key[0] === '$') {
       if (key === '$all') {
@@ -56,18 +60,31 @@ function addFields(
         fields.add(path.split('.')[0] + '.ancestors')
         return
       } else if (key === '$field') {
-        fields.add(path)
+        if (Array.isArray(opts.$field)) {
+          opts.$field.forEach(f => fields.add(f))
+        } else {
+          fields.add(opts.$field)
+        }
+
         return
       }
 
+      // FIXME: other special options missing? -- $ref needs to be handled on lua side
       continue
     }
+
+    hasKeys = true
 
     if (opts[key] === true) {
       fields.add(`${path}.${key}`)
     } else if (typeof opts[key] === 'object') {
       addFields(`${path}.${key}`, fields, schema, opts[key])
     }
+  }
+
+  // default to adding the field if only options are specified
+  if (!hasKeys) {
+    fields.add(path)
   }
 }
 
@@ -76,12 +93,19 @@ export default class SubscriptionManager {
   private subscriptions: Record<string, GetOptions> = {}
   private client: SelvaClient
   private pubsub: RedisClient
+  private refreshSubscriptionsTimeout: NodeJS.Timeout
 
-  attach(port: number) {
+  async attach(port: number) {
+    await this.refreshSubscriptions()
+
     this.client = new SelvaClient({ port })
 
     this.pubsub = new RedisClient({ port })
     this.pubsub.on('pmessage', (_pattern, channel, _message) => {
+      // used to deduplicate events for subscriptions,
+      // firing only once if multiple fields in subscription are changed
+      const updatedSubscriptions: Record<string, true> = {}
+
       const eventName = channel.slice('___selva_events:'.length)
 
       const parts = eventName.split('.')
@@ -90,17 +114,25 @@ export default class SubscriptionManager {
         const subscriptionIds: Set<string> | undefined = this
           .subscriptionsByField[field]
 
-        if (subscriptionIds) {
-          for (const subscriptionId of subscriptionIds) {
-            this.client
-              .get(this.subscriptions[subscriptionId])
-              .then(payload => {
-                this.pubsub.publish(subscriptionId, JSON.stringify(payload))
-              })
-              .catch(e => {
-                console.error(e)
-              })
+        if (!subscriptionIds) {
+          continue
+        }
+
+        for (const subscriptionId of subscriptionIds) {
+          if (updatedSubscriptions[subscriptionId]) {
+            continue
           }
+
+          updatedSubscriptions[subscriptionId] = true
+
+          this.client
+            .get(this.subscriptions[subscriptionId])
+            .then(payload => {
+              this.pubsub.publish(subscriptionId, JSON.stringify(payload))
+            })
+            .catch(e => {
+              console.error(e)
+            })
         }
 
         field += '.' + parts[i + i]
@@ -108,22 +140,37 @@ export default class SubscriptionManager {
     })
 
     this.pubsub.psubscribe('___selva_events:*')
+
+    const timeout = () => {
+      this.refreshSubscriptions()
+        .catch(e => {
+          console.error(e)
+        })
+        .finally(() => {
+          this.refreshSubscriptionsTimeout = setTimeout(timeout, 1000 * 30)
+        })
+    }
   }
 
   detach() {
     this.pubsub.end(true)
     this.pubsub = undefined
+
+    if (this.refreshSubscriptionsTimeout) {
+      clearTimeout(this.refreshSubscriptionsTimeout)
+      this.refreshSubscriptionsTimeout = undefined
+    }
   }
 
   get closed(): boolean {
     return this.pubsub === undefined
   }
 
-  async refreshSubscriptions() {
+  private async refreshSubscriptions() {
     const schema = (await this.client.getSchema()).schema
     const stored = await this.client.redis.hgetall('___selva_susbriptions')
 
-    console.log('subs', stored)
+    console.log('stored sub data', stored)
     const fieldMap: Record<string, Set<string>> = {}
     const subs: Record<string, GetOptions> = {}
     for (const subscriptionId in stored) {
@@ -144,5 +191,7 @@ export default class SubscriptionManager {
 
     this.subscriptionsByField = fieldMap
     this.subscriptions = subs
+    console.log('subs', this.subscriptions)
+    console.log('by field', this.subscriptionsByField)
   }
 }
