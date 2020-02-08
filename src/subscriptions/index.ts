@@ -92,16 +92,19 @@ export default class SubscriptionManager {
   private subscriptionsByField: Record<string, Set<string>> = {}
   private subscriptions: Record<string, GetOptions> = {}
   private client: SelvaClient
-  private pubsub: RedisClient
+  private sub: RedisClient
+  private pub: RedisClient
   private refreshSubscriptionsTimeout: NodeJS.Timeout
 
   async attach(port: number) {
+    console.log('attaching subscriptions')
+    this.client = new SelvaClient({ port })
     await this.refreshSubscriptions()
 
-    this.client = new SelvaClient({ port })
-
-    this.pubsub = new RedisClient({ port })
-    this.pubsub.on('pmessage', (_pattern, channel, _message) => {
+    this.sub = new RedisClient({ port })
+    this.pub = new RedisClient({ port })
+    this.sub.on('pmessage', (_pattern, channel, _message) => {
+      console.log('got lua event', channel)
       // used to deduplicate events for subscriptions,
       // firing only once if multiple fields in subscription are changed
       const updatedSubscriptions: Record<string, true> = {}
@@ -111,35 +114,46 @@ export default class SubscriptionManager {
       const parts = eventName.split('.')
       let field = parts[0]
       for (let i = 0; i < parts.length; i++) {
-        const subscriptionIds: Set<string> | undefined = this
-          .subscriptionsByField[field]
-
-        if (!subscriptionIds) {
-          continue
-        }
+        console.log('trying field', field)
+        const subscriptionIds: Set<string> | undefined =
+          this.subscriptionsByField[field] || new Set()
 
         for (const subscriptionId of subscriptionIds) {
           if (updatedSubscriptions[subscriptionId]) {
+            console.log('subscription', subscriptionId, 'already updated')
             continue
           }
 
           updatedSubscriptions[subscriptionId] = true
 
+          console.log(
+            'found subscription to update',
+            subscriptionId,
+            this.subscriptions[subscriptionId]
+          )
           this.client
             .get(this.subscriptions[subscriptionId])
             .then(payload => {
-              this.pubsub.publish(subscriptionId, JSON.stringify(payload))
+              console.log(
+                `publishing`,
+                `___selva_subscription:${subscriptionId}`,
+                JSON.stringify(payload)
+              )
+              this.pub.publish(
+                `___selva_subscription:${subscriptionId}`,
+                JSON.stringify(payload)
+              )
             })
             .catch(e => {
               console.error(e)
             })
         }
 
-        field += '.' + parts[i + i]
+        field += '.' + parts[i + 1]
       }
     })
 
-    this.pubsub.psubscribe('___selva_events:*')
+    this.sub.psubscribe('___selva_events:*')
 
     const timeout = () => {
       this.refreshSubscriptions()
@@ -147,14 +161,18 @@ export default class SubscriptionManager {
           console.error(e)
         })
         .finally(() => {
-          this.refreshSubscriptionsTimeout = setTimeout(timeout, 1000 * 30)
+          this.refreshSubscriptionsTimeout = setTimeout(timeout, 1000 * 10)
         })
     }
+    timeout()
   }
 
   detach() {
-    this.pubsub.end(true)
-    this.pubsub = undefined
+    this.sub.end(true)
+    this.sub = undefined
+
+    this.pub.end(true)
+    this.pub = undefined
 
     if (this.refreshSubscriptionsTimeout) {
       clearTimeout(this.refreshSubscriptionsTimeout)
@@ -163,12 +181,12 @@ export default class SubscriptionManager {
   }
 
   get closed(): boolean {
-    return this.pubsub === undefined
+    return this.sub === undefined
   }
 
   private async refreshSubscriptions() {
     const schema = (await this.client.getSchema()).schema
-    const stored = await this.client.redis.hgetall('___selva_susbriptions')
+    const stored = await this.client.redis.hgetall('___selva_subscriptions')
 
     console.log('stored sub data', stored)
     const fieldMap: Record<string, Set<string>> = {}
@@ -180,9 +198,9 @@ export default class SubscriptionManager {
 
       addFields('', fields, schema, getOptions)
       for (const field of fields) {
-        let current = fieldMap[field]
+        let current = fieldMap[getOptions.$id + field]
         if (!current) {
-          fieldMap[field] = current = new Set()
+          fieldMap[getOptions.$id + field] = current = new Set()
         }
 
         current.add(subscriptionId)

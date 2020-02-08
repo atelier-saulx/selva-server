@@ -10,6 +10,8 @@ import {
   loadBackup
 } from './backups'
 
+import SubscriptionManager from './subscriptions'
+
 // const persist = require('./persistent')
 // const cleanExit = require('./cleanExit')
 
@@ -31,6 +33,7 @@ type FnStart = {
     scheduled?: { intervalInMinutes: number }
     backupFns: BackupFns | Promise<BackupFns>
   }
+  subscriptions?: boolean
 }
 
 type SelvaServer = {
@@ -57,7 +60,8 @@ export const start = async function({
   verbose = false,
   loglevel = 'warning',
   developmentLogging = false,
-  backups = null
+  backups = null,
+  subscriptions = true
 }: FnStart): Promise<SelvaServer> {
   let port: number
   let backupFns: BackupFns
@@ -197,6 +201,12 @@ export const start = async function({
     }, 100)
   }
 
+  const subs = new SubscriptionManager()
+  console.log(`subs enabled ${subscriptions}`)
+  if (subscriptions) {
+    await subs.attach(port)
+  }
+
   const redisServer: SelvaServer = {
     on: (type: 'data' | 'close' | 'error', cb: (data: any) => void) => {
       if (type === 'error') {
@@ -208,6 +218,7 @@ export const start = async function({
       }
     },
     destroy: async () => {
+      subs.detach()
       execSync(`redis-cli -p ${port} shutdown`)
       redisDb.kill()
       await wait()
