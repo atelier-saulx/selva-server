@@ -97,14 +97,12 @@ export default class SubscriptionManager {
   private refreshSubscriptionsTimeout: NodeJS.Timeout
 
   async attach(port: number) {
-    console.log('attaching subscriptions')
     this.client = new SelvaClient({ port })
     await this.refreshSubscriptions()
 
     this.sub = new RedisClient({ port })
     this.pub = new RedisClient({ port })
     this.sub.on('pmessage', (_pattern, channel, _message) => {
-      console.log('got lua event', channel)
       // used to deduplicate events for subscriptions,
       // firing only once if multiple fields in subscription are changed
       const updatedSubscriptions: Record<string, true> = {}
@@ -114,31 +112,19 @@ export default class SubscriptionManager {
       const parts = eventName.split('.')
       let field = parts[0]
       for (let i = 0; i < parts.length; i++) {
-        console.log('trying field', field)
         const subscriptionIds: Set<string> | undefined =
           this.subscriptionsByField[field] || new Set()
 
         for (const subscriptionId of subscriptionIds) {
           if (updatedSubscriptions[subscriptionId]) {
-            console.log('subscription', subscriptionId, 'already updated')
             continue
           }
 
           updatedSubscriptions[subscriptionId] = true
 
-          console.log(
-            'found subscription to update',
-            subscriptionId,
-            this.subscriptions[subscriptionId]
-          )
           this.client
             .get(this.subscriptions[subscriptionId])
             .then(payload => {
-              console.log(
-                `publishing`,
-                `___selva_subscription:${subscriptionId}`,
-                JSON.stringify(payload)
-              )
               this.pub.publish(
                 `___selva_subscription:${subscriptionId}`,
                 JSON.stringify(payload)
@@ -188,7 +174,6 @@ export default class SubscriptionManager {
     const schema = (await this.client.getSchema()).schema
     const stored = await this.client.redis.hgetall('___selva_subscriptions')
 
-    console.log('stored sub data', stored)
     const fieldMap: Record<string, Set<string>> = {}
     const subs: Record<string, GetOptions> = {}
     for (const subscriptionId in stored) {
@@ -209,7 +194,5 @@ export default class SubscriptionManager {
 
     this.subscriptionsByField = fieldMap
     this.subscriptions = subs
-    console.log('subs', this.subscriptions)
-    console.log('by field', this.subscriptionsByField)
   }
 }
