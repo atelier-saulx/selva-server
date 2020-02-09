@@ -1,7 +1,7 @@
 import { RedisClient } from 'redis'
 import { SelvaClient } from 'selva-client'
 import { GetOptions } from 'selva-client/src/get/types'
-import { Schema, FieldSchemaObject } from 'selva-client/src/schema'
+import { Schema, FieldSchemaObject, FieldSchema } from 'selva-client/src/schema'
 
 function isObjectLike(x: any): x is FieldSchemaObject {
   return !!(x && x.properties)
@@ -22,10 +22,18 @@ function makeAll(path: string, schema: Schema, opts: GetOptions): GetOptions {
     return newOpts
   }
 
-  let prop = type.fields[parts[0]]
-  for (let i = 1; i < parts.length; i++) {
+  let prop: FieldSchema = {
+    type: 'object',
+    properties: type.fields
+  }
+
+  for (let i = 0; i < parts.length; i++) {
+    if (!parts[i]) {
+      break
+    }
+
     if (!isObjectLike(prop)) {
-      return newOpts
+      break
     } else {
       prop = prop.properties[parts[i]]
     }
@@ -112,46 +120,71 @@ export default class SubscriptionManager {
 
     this.sub = new RedisClient({ port })
     this.pub = new RedisClient({ port })
-    this.sub.on('message', (channel, message) => {
-      console.log('message', channel, message)
+
+    // client heartbeat events
+    this.sub.on('message', (_channel, message) => {
       const subId = message.slice('___selva_subscription:'.length)
       this.lastHeartbeat[subId] = Date.now()
     })
 
-    this.sub.on('pmessage', (_pattern, channel, _message) => {
+    // lua object change events
+    this.sub.on('pmessage', (_pattern, channel, message) => {
       // used to deduplicate events for subscriptions,
       // firing only once if multiple fields in subscription are changed
       const updatedSubscriptions: Record<string, true> = {}
 
       const eventName = channel.slice('___selva_events:'.length)
 
-      const parts = eventName.split('.')
-      let field = parts[0]
-      for (let i = 0; i < parts.length; i++) {
-        const subscriptionIds: Set<string> | undefined =
-          this.subscriptionsByField[field] || new Set()
+      if (message === 'delete') {
+        for (const field in this.subscriptionsByField) {
+          if (field.startsWith(eventName)) {
+            const subscriptionIds: Set<string> | undefined =
+              this.subscriptionsByField[field] || new Set()
 
-        for (const subscriptionId of subscriptionIds) {
-          if (updatedSubscriptions[subscriptionId]) {
-            continue
-          }
+            for (const subscriptionId of subscriptionIds) {
+              if (updatedSubscriptions[subscriptionId]) {
+                continue
+              }
 
-          updatedSubscriptions[subscriptionId] = true
+              updatedSubscriptions[subscriptionId] = true
 
-          this.client
-            .get(this.subscriptions[subscriptionId])
-            .then(payload => {
               this.pub.publish(
                 `___selva_subscription:${subscriptionId}`,
-                JSON.stringify({ type: 'update', payload })
+                JSON.stringify({ type: 'delete' })
               )
-            })
-            .catch(e => {
-              console.error(e)
-            })
+            }
+          }
         }
+        return
+      } else if (message === 'update') {
+        const parts = eventName.split('.')
+        let field = parts[0]
+        for (let i = 0; i < parts.length; i++) {
+          const subscriptionIds: Set<string> | undefined =
+            this.subscriptionsByField[field] || new Set()
 
-        field += '.' + parts[i + 1]
+          for (const subscriptionId of subscriptionIds) {
+            if (updatedSubscriptions[subscriptionId]) {
+              continue
+            }
+
+            updatedSubscriptions[subscriptionId] = true
+
+            this.client
+              .get(this.subscriptions[subscriptionId])
+              .then(payload => {
+                this.pub.publish(
+                  `___selva_subscription:${subscriptionId}`,
+                  JSON.stringify({ type: 'update', payload })
+                )
+              })
+              .catch(e => {
+                console.error(e)
+              })
+          }
+
+          field += '.' + parts[i + 1]
+        }
       }
     })
 
