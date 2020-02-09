@@ -96,12 +96,25 @@ export default class SubscriptionManager {
   private pub: RedisClient
   private refreshSubscriptionsTimeout: NodeJS.Timeout
 
+  heartbeats() {
+    for (const subscriptionId in this.subscriptions) {
+      this.pub.publish(
+        `___selva_subscription:${subscriptionId}`,
+        JSON.stringify({ type: 'heartbeat' })
+      )
+    }
+  }
+
   async attach(port: number) {
     this.client = new SelvaClient({ port })
     await this.refreshSubscriptions()
 
     this.sub = new RedisClient({ port })
     this.pub = new RedisClient({ port })
+    this.sub.on('message', (channel, message) => {
+      console.log('message', channel, message)
+    })
+
     this.sub.on('pmessage', (_pattern, channel, _message) => {
       // used to deduplicate events for subscriptions,
       // firing only once if multiple fields in subscription are changed
@@ -127,7 +140,7 @@ export default class SubscriptionManager {
             .then(payload => {
               this.pub.publish(
                 `___selva_subscription:${subscriptionId}`,
-                JSON.stringify(payload)
+                JSON.stringify({ type: 'update', payload })
               )
             })
             .catch(e => {
@@ -140,8 +153,11 @@ export default class SubscriptionManager {
     })
 
     this.sub.psubscribe('___selva_events:*')
+    this.sub.subscribe('___selva_subscription:client_heartbeats')
 
     const timeout = () => {
+      this.heartbeats()
+
       this.refreshSubscriptions()
         .catch(e => {
           console.error(e)
