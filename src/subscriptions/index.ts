@@ -91,6 +91,7 @@ function addFields(
 export default class SubscriptionManager {
   private subscriptionsByField: Record<string, Set<string>> = {}
   private subscriptions: Record<string, GetOptions> = {}
+  private lastHeartbeat: Record<string, number> = {}
   private client: SelvaClient
   private sub: RedisClient
   private pub: RedisClient
@@ -113,6 +114,8 @@ export default class SubscriptionManager {
     this.pub = new RedisClient({ port })
     this.sub.on('message', (channel, message) => {
       console.log('message', channel, message)
+      const subId = message.slice('___selva_subscription:'.length)
+      this.lastHeartbeat[subId] = Date.now()
     })
 
     this.sub.on('pmessage', (_pattern, channel, _message) => {
@@ -193,6 +196,17 @@ export default class SubscriptionManager {
     const fieldMap: Record<string, Set<string>> = {}
     const subs: Record<string, GetOptions> = {}
     for (const subscriptionId in stored) {
+      if (this.lastHeartbeat[subscriptionId]) {
+        // if no heartbeats in two minutes, clean up
+        if (Date.now() - this.lastHeartbeat[subscriptionId] > 1000 * 120) {
+          await this.client.redis.hdel('___selva_subscriptions', subscriptionId)
+          continue
+        }
+      } else {
+        // add heartbeat for anything that's newly added
+        this.lastHeartbeat[subscriptionId] = Date.now()
+      }
+
       const fields: Set<string> = new Set()
       const getOptions: GetOptions = JSON.parse(stored[subscriptionId])
       subs[subscriptionId] = getOptions
