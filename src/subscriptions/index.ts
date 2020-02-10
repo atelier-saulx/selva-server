@@ -66,13 +66,13 @@ function addFields(
         addFields(path, fields, schema, makeAll(path, schema, opts))
         return
       } else if (key === '$inherit') {
-        fields.add(path.split('.')[0] + '.ancestors')
+        fields.add('.ancestors')
         return
       } else if (key === '$field') {
         if (Array.isArray(opts.$field)) {
-          opts.$field.forEach(f => fields.add(f))
+          opts.$field.forEach(f => fields.add('.' + f))
         } else {
-          fields.add(opts.$field)
+          fields.add('.' + opts.$field)
         }
 
         return
@@ -220,6 +220,11 @@ export default class SubscriptionManager {
       clearTimeout(this.refreshSubscriptionsTimeout)
       this.refreshSubscriptionsTimeout = undefined
     }
+
+    this.subscriptionsByField = {}
+    this.subscriptions = {}
+    this.lastResultHash = {}
+    this.lastHeartbeat = {}
   }
 
   get closed(): boolean {
@@ -231,6 +236,10 @@ export default class SubscriptionManager {
     getOptions?: GetOptions,
     deleteOp: boolean = false
   ) {
+    if (!this.pub) {
+      return
+    }
+
     if (deleteOp) {
       this.pub.publish(
         `___selva_subscription:${subscriptionId}`,
