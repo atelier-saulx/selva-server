@@ -268,6 +268,7 @@ export default class SubscriptionManager {
     const payload = await this.client.get(
       getOptions || this.subscriptions[subscriptionId]
     )
+
     // hack-ish thing: include the result object in the string
     // so we don't need to encode/decode as many times
     const resultStr = JSON.stringify({ type: 'update', payload })
@@ -305,20 +306,23 @@ export default class SubscriptionManager {
       stored = await this.client.redis.hget('___selva_subscriptions', subId)
     }
 
-    console.log('refresh subscription', subId, stored)
-
     const getOptions: GetOptions = JSON.parse(stored)
 
     if (cleanup && this.lastHeartbeat[subId]) {
       // if no heartbeats in two minutes, clean up
       if (Date.now() - this.lastHeartbeat[subId] > 1000 * 120) {
+        delete this.lastHeartbeat[subId]
+        delete this.lastResultHash[subId]
+
         await this.client.redis.hdel('___selva_subscriptions', subId)
         return
       }
-    } else {
+    } else if (!cleanup) {
       // add heartbeat for anything that's newly added
       this.lastHeartbeat[subId] = Date.now()
-      // new subscription, send the current data immediately
+
+      // new subscription or reconnect, send the current data immediately
+      delete this.lastResultHash[subId]
       this.sendUpdate(subId, getOptions).catch(e => {
         console.error(e)
       })
@@ -346,7 +350,6 @@ export default class SubscriptionManager {
       '___lastEdited'
     )
 
-    console.log('lastEdited', lastEdited)
     // only refresh if there are new changes to the subscription metadata
     if (lastEdited && this.lastRefreshed) {
       const d = new Date(lastEdited)
@@ -355,7 +358,6 @@ export default class SubscriptionManager {
       }
     }
 
-    console.log('running periodic refresh')
     const stored = await this.client.redis.hgetall('___selva_subscriptions')
     const fieldMap: Record<string, Set<string>> = {}
     const subs: Record<string, GetOptions> = {}
