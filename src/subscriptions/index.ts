@@ -112,6 +112,8 @@ export default class SubscriptionManager {
   private pub: RedisClient
 
   heartbeats() {
+    this.pub.publish('___selva_events:heartbeat', '')
+
     for (const subscriptionId in this.subscriptions) {
       this.pub.publish(
         `___selva_subscription:${subscriptionId}`,
@@ -146,6 +148,9 @@ export default class SubscriptionManager {
     // lua object change events
     this.sub.on('pmessage', (_pattern, channel, message) => {
       this.lastModifyEvent = Date.now()
+      if (channel === '___selva_events:heartbeat') {
+        return
+      }
 
       // used to deduplicate events for subscriptions,
       // firing only once if multiple fields in subscription are changed
@@ -199,7 +204,7 @@ export default class SubscriptionManager {
     this.sub.subscribe('___selva_subscription:client_heartbeats')
 
     const timeout = () => {
-      if (Date.now() - this.lastModifyEvent > 1000 * 60 * 5) {
+      if (Date.now() - this.lastModifyEvent > 1000 * 30) {
         this.detach()
         this.attach(port).catch(e => {
           console.error(e)
