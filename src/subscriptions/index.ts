@@ -100,6 +100,7 @@ function addFields(
 export default class SubscriptionManager {
   private refreshSubscriptionsTimeout: NodeJS.Timeout
   private lastRefreshed: Date
+  private lastModifyEvent: number
 
   private subscriptions: Record<string, GetOptions> = {}
   private subscriptionsByField: Record<string, Set<string>> = {}
@@ -144,6 +145,8 @@ export default class SubscriptionManager {
 
     // lua object change events
     this.sub.on('pmessage', (_pattern, channel, message) => {
+      this.lastModifyEvent = Date.now()
+
       // used to deduplicate events for subscriptions,
       // firing only once if multiple fields in subscription are changed
       const updatedSubscriptions: Record<string, true> = {}
@@ -196,6 +199,15 @@ export default class SubscriptionManager {
     this.sub.subscribe('___selva_subscription:client_heartbeats')
 
     const timeout = () => {
+      if (Date.now() - this.lastModifyEvent > 1000 * 60 * 5) {
+        this.detach()
+        this.attach(port).catch(e => {
+          console.error(e)
+        })
+
+        return
+      }
+
       this.heartbeats()
 
       this.refreshSubscriptions()
@@ -221,9 +233,6 @@ export default class SubscriptionManager {
       this.refreshSubscriptionsTimeout = undefined
     }
 
-    this.subscriptionsByField = {}
-    this.subscriptions = {}
-    this.lastResultHash = {}
     this.lastHeartbeat = {}
   }
 
