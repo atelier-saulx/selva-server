@@ -123,8 +123,18 @@ export default class SubscriptionManager {
 
     // client heartbeat events
     this.sub.on('message', (_channel, message) => {
-      const subId = message.slice('___selva_subscription:'.length)
+      const payload: { channel: string; refresh?: boolean } = JSON.parse(
+        message
+      )
+
+      const subId = payload.channel.slice('___selva_subscription:'.length)
       this.lastHeartbeat[subId] = Date.now()
+
+      if (payload.refresh) {
+        this.refreshSubscription(subId).catch(e => {
+          console.error(e)
+        })
+      }
     })
 
     // lua object change events
@@ -222,6 +232,62 @@ export default class SubscriptionManager {
     return this.sub === undefined
   }
 
+  private async refreshSubscription(
+    subId: string,
+    subs: Record<string, GetOptions> = this.subscriptions,
+    fieldMap: Record<string, Set<string>> = this.subscriptionsByField,
+    schema?: Schema,
+    stored?: string
+  ) {
+    if (!schema) {
+      schema = (await this.client.getSchema()).schema
+    }
+
+    if (!stored) {
+      stored = await this.client.redis.hget('___selva_subscriptions', subId)
+    }
+
+    console.log('refresh subscription', subId, stored)
+
+    const getOptions: GetOptions = JSON.parse(stored)
+
+    if (this.lastHeartbeat[subId]) {
+      // if no heartbeats in two minutes, clean up
+      if (Date.now() - this.lastHeartbeat[subId] > 1000 * 120) {
+        await this.client.redis.hdel('___selva_subscriptions', subId)
+        return
+      }
+    } else {
+      // add heartbeat for anything that's newly added
+      this.lastHeartbeat[subId] = Date.now()
+      // new subscription, send the current data immediately
+      this.client
+        .get(getOptions)
+        .then(payload => {
+          this.pub.publish(
+            `___selva_subscription:${subId}`,
+            JSON.stringify({ type: 'update', payload })
+          )
+        })
+        .catch(e => {
+          console.error(e)
+        })
+    }
+
+    const fields: Set<string> = new Set()
+    subs[subId] = getOptions
+
+    addFields('', fields, schema, getOptions)
+    for (const field of fields) {
+      let current = fieldMap[getOptions.$id + field]
+      if (!current) {
+        fieldMap[getOptions.$id + field] = current = new Set()
+      }
+
+      current.add(subId)
+    }
+  }
+
   private async refreshSubscriptions() {
     const schema = (await this.client.getSchema()).schema
     const stored = await this.client.redis.hgetall('___selva_subscriptions')
@@ -229,43 +295,13 @@ export default class SubscriptionManager {
     const fieldMap: Record<string, Set<string>> = {}
     const subs: Record<string, GetOptions> = {}
     for (const subscriptionId in stored) {
-      const getOptions: GetOptions = JSON.parse(stored[subscriptionId])
-
-      if (this.lastHeartbeat[subscriptionId]) {
-        // if no heartbeats in two minutes, clean up
-        if (Date.now() - this.lastHeartbeat[subscriptionId] > 1000 * 120) {
-          await this.client.redis.hdel('___selva_subscriptions', subscriptionId)
-          continue
-        }
-      } else {
-        // add heartbeat for anything that's newly added
-        this.lastHeartbeat[subscriptionId] = Date.now()
-        // new subscription, send the current data immediately
-        this.client
-          .get(getOptions)
-          .then(payload => {
-            this.pub.publish(
-              `___selva_subscription:${subscriptionId}`,
-              JSON.stringify({ type: 'update', payload })
-            )
-          })
-          .catch(e => {
-            console.error(e)
-          })
-      }
-
-      const fields: Set<string> = new Set()
-      subs[subscriptionId] = getOptions
-
-      addFields('', fields, schema, getOptions)
-      for (const field of fields) {
-        let current = fieldMap[getOptions.$id + field]
-        if (!current) {
-          fieldMap[getOptions.$id + field] = current = new Set()
-        }
-
-        current.add(subscriptionId)
-      }
+      this.refreshSubscription(
+        subscriptionId,
+        subs,
+        fieldMap,
+        schema,
+        stored[subscriptionId]
+      )
     }
 
     this.subscriptionsByField = fieldMap
