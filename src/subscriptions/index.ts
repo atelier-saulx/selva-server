@@ -100,6 +100,7 @@ export default class SubscriptionManager {
   private subscriptionsByField: Record<string, Set<string>> = {}
   private subscriptions: Record<string, GetOptions> = {}
   private lastHeartbeat: Record<string, number> = {}
+  private lastRefreshed: Date
   private client: SelvaClient
   private sub: RedisClient
   private pub: RedisClient
@@ -290,11 +291,31 @@ export default class SubscriptionManager {
 
   private async refreshSubscriptions() {
     const schema = (await this.client.getSchema()).schema
-    const stored = await this.client.redis.hgetall('___selva_subscriptions')
 
+    const lastEdited = await this.client.redis.hget(
+      '___selva_subscriptions',
+      '___lastEdited'
+    )
+
+    console.log('lastEdited', lastEdited)
+    // only refresh if there are new changes to the subscription metadata
+    if (lastEdited && this.lastRefreshed) {
+      const d = new Date(lastEdited)
+      if (d <= this.lastRefreshed) {
+        return
+      }
+    }
+
+    console.log('running periodic refresh')
+    const stored = await this.client.redis.hgetall('___selva_subscriptions')
     const fieldMap: Record<string, Set<string>> = {}
     const subs: Record<string, GetOptions> = {}
     for (const subscriptionId in stored) {
+      if (subscriptionId.startsWith('___')) {
+        // skip internal keys
+        continue
+      }
+
       this.refreshSubscription(
         subscriptionId,
         subs,
@@ -303,6 +324,8 @@ export default class SubscriptionManager {
         stored[subscriptionId]
       )
     }
+
+    this.lastRefreshed = new Date()
 
     this.subscriptionsByField = fieldMap
     this.subscriptions = subs
