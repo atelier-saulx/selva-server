@@ -229,6 +229,8 @@ export default class SubscriptionManager {
     const fieldMap: Record<string, Set<string>> = {}
     const subs: Record<string, GetOptions> = {}
     for (const subscriptionId in stored) {
+      const getOptions: GetOptions = JSON.parse(stored[subscriptionId])
+
       if (this.lastHeartbeat[subscriptionId]) {
         // if no heartbeats in two minutes, clean up
         if (Date.now() - this.lastHeartbeat[subscriptionId] > 1000 * 120) {
@@ -238,10 +240,21 @@ export default class SubscriptionManager {
       } else {
         // add heartbeat for anything that's newly added
         this.lastHeartbeat[subscriptionId] = Date.now()
+        // new subscription, send the current data immediately
+        this.client
+          .get(getOptions)
+          .then(payload => {
+            this.pub.publish(
+              `___selva_subscription:${subscriptionId}`,
+              JSON.stringify({ type: 'update', payload })
+            )
+          })
+          .catch(e => {
+            console.error(e)
+          })
       }
 
       const fields: Set<string> = new Set()
-      const getOptions: GetOptions = JSON.parse(stored[subscriptionId])
       subs[subscriptionId] = getOptions
 
       addFields('', fields, schema, getOptions)
