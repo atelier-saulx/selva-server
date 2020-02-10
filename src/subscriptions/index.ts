@@ -238,7 +238,8 @@ export default class SubscriptionManager {
     subs: Record<string, GetOptions> = this.subscriptions,
     fieldMap: Record<string, Set<string>> = this.subscriptionsByField,
     schema?: Schema,
-    stored?: string
+    stored?: string,
+    cleanup: boolean = false
   ) {
     if (!schema) {
       schema = (await this.client.getSchema()).schema
@@ -252,7 +253,7 @@ export default class SubscriptionManager {
 
     const getOptions: GetOptions = JSON.parse(stored)
 
-    if (this.lastHeartbeat[subId]) {
+    if (cleanup && this.lastHeartbeat[subId]) {
       // if no heartbeats in two minutes, clean up
       if (Date.now() - this.lastHeartbeat[subId] > 1000 * 120) {
         await this.client.redis.hdel('___selva_subscriptions', subId)
@@ -321,7 +322,8 @@ export default class SubscriptionManager {
         subs,
         fieldMap,
         schema,
-        stored[subscriptionId]
+        stored[subscriptionId],
+        true
       )
     }
 
