@@ -1,4 +1,4 @@
-import { RedisClient } from 'redis'
+import { createClient, RedisClient } from 'redis'
 import { SelvaClient } from 'selva-client'
 import { GetOptions } from 'selva-client/src/get/types'
 import { Schema, FieldSchemaObject, FieldSchema } from 'selva-client/src/schema'
@@ -124,10 +124,60 @@ export default class SubscriptionManager {
 
   async attach(port: number) {
     this.client = new SelvaClient({ port })
-    await this.refreshSubscriptions()
 
-    this.sub = new RedisClient({ port })
-    this.pub = new RedisClient({ port })
+    this.sub = createClient({ port })
+    this.pub = createClient({ port })
+
+    this.sub.on('error', e => {
+      // console.error(e)
+    })
+    this.pub.on('error', e => {
+      // console.error(e)
+    })
+
+    let tm: NodeJS.Timeout
+    try {
+      await Promise.race([
+        new Promise((resolve, _reject) => {
+          let count = 0
+          this.pub.on('ready', () => {
+            count++
+            if (count === 2) {
+              if (tm) {
+                clearTimeout(tm)
+              }
+
+              resolve()
+            }
+          })
+
+          this.sub.on('ready', () => {
+            count++
+            if (count === 2) {
+              if (tm) {
+                clearTimeout(tm)
+              }
+
+              resolve()
+            }
+          })
+        }),
+        new Promise((_resolve, reject) => {
+          tm = setTimeout(() => {
+            this.pub.removeAllListeners('ready')
+            this.sub.removeAllListeners('ready')
+            reject()
+          }, 5000)
+        })
+      ])
+    } catch (e) {
+      setTimeout(() => {
+        this.attach(port)
+      }, 1000)
+    }
+
+    await this.refreshSubscriptions()
+    this.recalculateUpdates()
 
     // client heartbeat events
     this.sub.on('message', (_channel, message) => {
@@ -139,9 +189,14 @@ export default class SubscriptionManager {
       this.lastHeartbeat[subId] = Date.now()
 
       if (payload.refresh) {
-        this.refreshSubscription(subId).catch(e => {
-          console.error(e)
-        })
+        delete this.lastResultHash[subId]
+        this.refreshSubscription(subId)
+          .then(() => {
+            return this.sendUpdate(subId)
+          })
+          .catch(e => {
+            console.error(e)
+          })
       }
     })
 
@@ -227,10 +282,10 @@ export default class SubscriptionManager {
   }
 
   detach() {
-    this.sub.end(true)
+    this.sub.end(false)
     this.sub = undefined
 
-    this.pub.end(true)
+    this.pub.end(false)
     this.pub = undefined
 
     if (this.refreshSubscriptionsTimeout) {
@@ -238,6 +293,7 @@ export default class SubscriptionManager {
       this.refreshSubscriptionsTimeout = undefined
     }
 
+    this.lastRefreshed = undefined
     this.lastHeartbeat = {}
   }
 
@@ -257,7 +313,10 @@ export default class SubscriptionManager {
     if (deleteOp) {
       this.pub.publish(
         `___selva_subscription:${subscriptionId}`,
-        JSON.stringify({ type: 'delete' })
+        JSON.stringify({ type: 'delete' }),
+        (err, _reply) => {
+          console.error(err)
+        }
       )
 
       // delete cache for latest result since there is no result now
@@ -287,7 +346,13 @@ export default class SubscriptionManager {
 
     this.lastResultHash[subscriptionId] = newHash
 
-    this.pub.publish(`___selva_subscription:${subscriptionId}`, resultStr)
+    this.pub.publish(
+      `___selva_subscription:${subscriptionId}`,
+      resultStr,
+      (err, _reply) => {
+        console.error(err)
+      }
+    )
   }
 
   private async refreshSubscription(
@@ -317,15 +382,6 @@ export default class SubscriptionManager {
         await this.client.redis.hdel('___selva_subscriptions', subId)
         return
       }
-    } else if (!cleanup) {
-      // add heartbeat for anything that's newly added
-      this.lastHeartbeat[subId] = Date.now()
-
-      // new subscription or reconnect, send the current data immediately
-      delete this.lastResultHash[subId]
-      this.sendUpdate(subId, getOptions).catch(e => {
-        console.error(e)
-      })
     }
 
     const fields: Set<string> = new Set()
@@ -339,6 +395,14 @@ export default class SubscriptionManager {
       }
 
       current.add(subId)
+    }
+  }
+
+  private recalculateUpdates() {
+    for (const subId in this.subscriptions) {
+      this.sendUpdate(subId).catch(e => {
+        console.error(e)
+      })
     }
   }
 
@@ -359,6 +423,10 @@ export default class SubscriptionManager {
     }
 
     const stored = await this.client.redis.hgetall('___selva_subscriptions')
+    if (!stored) {
+      return
+    }
+
     const fieldMap: Record<string, Set<string>> = {}
     const subs: Record<string, GetOptions> = {}
     for (const subscriptionId in stored) {

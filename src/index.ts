@@ -43,6 +43,8 @@ type SelvaServer = {
   ) => void
   destroy: () => Promise<void>
   backup: () => Promise<void>
+  openSubscriptions: () => Promise<void>
+  closeSubscriptions: () => void
 }
 
 const defaultModules = ['redisearch', 'selva']
@@ -202,7 +204,7 @@ export const start = async function({
   }
 
   const subs = new SubscriptionManager()
-  console.log(`subs enabled ${subscriptions}`)
+  console.log(`subs enabled ${subscriptions}`, port)
   if (subscriptions) {
     await subs.attach(port)
   }
@@ -216,6 +218,12 @@ export const start = async function({
       } else {
         redisDb.on('close', cb)
       }
+    },
+    closeSubscriptions: () => {
+      subs.detach()
+    },
+    openSubscriptions: async () => {
+      await subs.attach(port)
     },
     destroy: async () => {
       subs.detach()
