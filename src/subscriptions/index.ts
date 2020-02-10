@@ -2,6 +2,7 @@ import { RedisClient } from 'redis'
 import { SelvaClient } from 'selva-client'
 import { GetOptions } from 'selva-client/src/get/types'
 import { Schema, FieldSchemaObject, FieldSchema } from 'selva-client/src/schema'
+import { createHash } from 'crypto'
 
 function isObjectLike(x: any): x is FieldSchemaObject {
   return !!(x && x.properties)
@@ -97,14 +98,17 @@ function addFields(
 }
 
 export default class SubscriptionManager {
-  private subscriptionsByField: Record<string, Set<string>> = {}
-  private subscriptions: Record<string, GetOptions> = {}
-  private lastHeartbeat: Record<string, number> = {}
+  private refreshSubscriptionsTimeout: NodeJS.Timeout
   private lastRefreshed: Date
+
+  private subscriptions: Record<string, GetOptions> = {}
+  private subscriptionsByField: Record<string, Set<string>> = {}
+  private lastResultHash: Record<string, string> = {}
+  private lastHeartbeat: Record<string, number> = {}
+
   private client: SelvaClient
   private sub: RedisClient
   private pub: RedisClient
-  private refreshSubscriptionsTimeout: NodeJS.Timeout
 
   heartbeats() {
     for (const subscriptionId in this.subscriptions) {
@@ -159,10 +163,7 @@ export default class SubscriptionManager {
 
               updatedSubscriptions[subscriptionId] = true
 
-              this.pub.publish(
-                `___selva_subscription:${subscriptionId}`,
-                JSON.stringify({ type: 'delete' })
-              )
+              this.sendUpdate(subscriptionId, null, true)
             }
           }
         }
@@ -181,17 +182,9 @@ export default class SubscriptionManager {
 
             updatedSubscriptions[subscriptionId] = true
 
-            this.client
-              .get(this.subscriptions[subscriptionId])
-              .then(payload => {
-                this.pub.publish(
-                  `___selva_subscription:${subscriptionId}`,
-                  JSON.stringify({ type: 'update', payload })
-                )
-              })
-              .catch(e => {
-                console.error(e)
-              })
+            this.sendUpdate(subscriptionId).catch(e => {
+              console.error(e)
+            })
           }
 
           field += '.' + parts[i + 1]
@@ -233,6 +226,46 @@ export default class SubscriptionManager {
     return this.sub === undefined
   }
 
+  private async sendUpdate(
+    subscriptionId: string,
+    getOptions?: GetOptions,
+    deleteOp: boolean = false
+  ) {
+    if (deleteOp) {
+      this.pub.publish(
+        `___selva_subscription:${subscriptionId}`,
+        JSON.stringify({ type: 'delete' })
+      )
+
+      // delete cache for latest result since there is no result now
+      delete this.lastResultHash[subscriptionId]
+      return
+    }
+
+    const payload = await this.client.get(
+      getOptions || this.subscriptions[subscriptionId]
+    )
+    // hack-ish thing: include the result object in the string
+    // so we don't need to encode/decode as many times
+    const resultStr = JSON.stringify({ type: 'update', payload })
+
+    const currentHash = this.lastResultHash[subscriptionId]
+    const hashingFn = createHash('sha256')
+    hashingFn.update(resultStr)
+    const newHash = hashingFn.digest('hex')
+
+    // de-duplicate events
+    // with this we can avoid sending events where nothing changed upon reconnection
+    // both for queries and for gets by id
+    if (currentHash && currentHash === newHash) {
+      return
+    }
+
+    this.lastResultHash[subscriptionId] = newHash
+
+    this.pub.publish(`___selva_subscription:${subscriptionId}`, resultStr)
+  }
+
   private async refreshSubscription(
     subId: string,
     subs: Record<string, GetOptions> = this.subscriptions,
@@ -263,17 +296,9 @@ export default class SubscriptionManager {
       // add heartbeat for anything that's newly added
       this.lastHeartbeat[subId] = Date.now()
       // new subscription, send the current data immediately
-      this.client
-        .get(getOptions)
-        .then(payload => {
-          this.pub.publish(
-            `___selva_subscription:${subId}`,
-            JSON.stringify({ type: 'update', payload })
-          )
-        })
-        .catch(e => {
-          console.error(e)
-        })
+      this.sendUpdate(subId, getOptions).catch(e => {
+        console.error(e)
+      })
     }
 
     const fields: Set<string> = new Set()
