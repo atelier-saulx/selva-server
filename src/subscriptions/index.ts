@@ -104,6 +104,7 @@ export default class SubscriptionManager {
 
   private subscriptions: Record<string, GetOptions> = {}
   private subscriptionsByField: Record<string, Set<string>> = {}
+  private refsById: Record<string, Record<string, string>> = {}
   private lastResultHash: Record<string, string> = {}
   private lastHeartbeat: Record<string, number> = {}
 
@@ -324,9 +325,32 @@ export default class SubscriptionManager {
       return
     }
 
+    getOptions = getOptions || this.subscriptions[subscriptionId]
     const payload = await this.client.get(
-      getOptions || this.subscriptions[subscriptionId]
+      Object.assign({}, getOptions, {
+        $includeMeta: true
+      })
     )
+
+    const refs = payload.$meta.$refs
+    delete this.refsById[getOptions.$id]
+
+    let hasRefs = false
+    const newRefs: Record<string, string> = {}
+    for (const refSource in refs) {
+      hasRefs = true
+
+      const refTargets = refs[refSource]
+      newRefs[refSource] = refTargets
+    }
+    this.refsById[getOptions.$id] = newRefs
+
+    if (hasRefs) {
+      this.refreshSubscription(subscriptionId)
+    }
+
+    // clean up refs before we send it to the client
+    delete payload.$meta
 
     // hack-ish thing: include the result object in the string
     // so we don't need to encode/decode as many times
@@ -395,6 +419,17 @@ export default class SubscriptionManager {
       }
 
       current.add(subId)
+    }
+
+    if (this.refsById[getOptions.$id]) {
+      for (const refSource in this.refsById[getOptions.$id]) {
+        let current = fieldMap[getOptions.$id + '.' + refSource]
+        if (!current) {
+          fieldMap[getOptions.$id + '.' + refSource] = current = new Set()
+        }
+
+        current.add(subId)
+      }
     }
   }
 
